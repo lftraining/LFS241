@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: prometheus
+  template:
+    metadata:
+      labels:
+        name: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: docker.io/prom/prometheus:v3.2.1
+        imagePullPolicy: IfNotPresent
+        args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --web.listen-address=:9090
+        - --web.enable-lifecycle
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/prometheus
+      # Watches for configmap changes, and runs a curl command to tell Prometheus to reload its config
+      # https://github.com/weaveworks/Watch 
+      # https://hub.docker.com/r/weaveworks/watch
+      - name: watch
+        image: docker.io/weaveworks/watch:master-85fdf1d
+        imagePullPolicy: IfNotPresent
+        args: ["-v", "-t", "-p=/etc/prometheus", "curl", "-X", "POST", "--fail", "-o", "-", "-sS", "http://prometheus:9090/-/reload"]
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/prometheus
+      volumes:
+        - name: config-volume
+          configMap:
+            name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  annotations:
+    prometheus.io/scrape: "true"
+spec:
+  ports:
+  - port: 9090
+    nodePort: 30000
+    name: prometheus
+  selector:
+    name: prometheus
+  type: NodePort
